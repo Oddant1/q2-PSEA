@@ -16,6 +16,8 @@ plugin = Plugin(
     description="Qiime2 Plugin for PSEA."  # TODO: get a description
 )
 
+# TODO: This currently takes a buncha random tsv files not artifacts
+# TODO: Need to create a pairs_file for my test epitope data
 
 # register make_psea_table function
 plugin.pipelines.register_function(
