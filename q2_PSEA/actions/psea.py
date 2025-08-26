@@ -27,6 +27,7 @@ def make_psea_table(
         pairs_file,
         peptide_sets_file,
         threshold,
+        mapped_epitope_file,
         p_val_thresh=0.05,
         nes_thresh=1,
         species_taxa_file="",
@@ -44,7 +45,9 @@ def make_psea_table(
         max_workers=None,
         summary_tables_dir="./psea_ae_summary_tables",
         vis_outputs_dir=None,
-        seed=149
+        seed=149,
+        enriched_subtypes_dir="./psea_enriched_subtypes_tables",
+        include_negative_enrichment=False
 ):
     start_time = time.perf_counter()
 
@@ -58,6 +61,8 @@ def make_psea_table(
         f"'{table_dir}' already exists! Please move or remove this directory."
     assert not os.path.exists(summary_tables_dir), \
         f"'{summary_tables_dir}' already exists! Please move or remove this directory."
+    assert not os.path.exists(enriched_subtypes_dir), \
+        f"'{enriched_subtypes_dir}' already exists! Please move or remove this directory."
     if iterative_analysis:
         assert ".gmt" in peptide_sets_file.lower(), \
             "You are running iterative analysis without a GMT peptide sets file."
@@ -71,6 +76,7 @@ def make_psea_table(
 
     os.mkdir(table_dir)
     os.mkdir(summary_tables_dir)
+    os.mkdir(enriched_subtypes_dir)
 
     pairs = list()
     pair_2_title = dict()
@@ -264,6 +270,21 @@ def make_psea_table(
             pd.DataFrame(pair_spline_dict).to_csv(
                 f"{tempdir}/spline_data.tsv", sep="\t", index=False
             )
+
+            subtypes = pd.read_csv(mapped_epitope_file, sep='\t')
+
+            for file in os.listdir(table_dir):
+                filename = file.split('_psea_table')[0]
+                filename = f'{filename}_enriched_subtypes_table.tsv'
+
+                file = os.path.join(table_dir, file)
+                subtype_counts = \
+                    count_enriched_subtypes(file, subtypes, p_val_thresh,
+                                            nes_thresh,
+                                            include_negative_enrichment)
+
+                filepath = os.path.join(enriched_subtypes_dir, filename)
+                subtype_counts.to_csv(filepath, sep='\t')
 
             processed_scores_art = ctx.make_artifact(
                 type="FeatureTable[Zscore]",
@@ -602,3 +623,33 @@ def write_gmt_from_dict(outfile_name, gmt_dict)->None:
                 gmt_file.write(f"{peptide}\t")
 
             gmt_file.write("\n")
+
+
+def count_enriched_subtypes(scores, subtypes, p_value, enrichment_score,
+                            include_negative_enrichment):
+    scores = pd.read_csv(scores, sep='\t')
+    scores = scores.loc[scores['p.adjust'] <= p_value]
+
+    if include_negative_enrichment:
+        scores = scores.loc[abs(scores['enrichmentScore'] >= enrichment_score)]
+    else:
+        scores = scores.loc[scores['enrichmentScore'] >= enrichment_score]
+
+    subtype_counts = {}
+    for _, row in scores.iterrows():
+        epitopes = row['core_enrichment'].split('/')
+
+        for epitope in epitopes:
+            possible_subtypes = \
+                subtypes.loc[subtypes['EpitopeID'] == epitope] \
+                    ['SpeciesSubtype'].values[0].split(";")
+
+            for possible_subtype in possible_subtypes:
+                if possible_subtype not in subtype_counts:
+                    subtype_counts[possible_subtype] = 0
+
+                subtype_counts[possible_subtype] += 1
+
+    subtype_counts = pd.DataFrame({'Counts': subtype_counts.values()},
+                                  index=subtype_counts.keys())
+    return subtype_counts

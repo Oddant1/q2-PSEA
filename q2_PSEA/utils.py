@@ -128,7 +128,7 @@ def remove_peptides(scores, peptide_sets_file) -> (pd.DataFrame, pd.DataFrame):
     -----
     * TSV and CSV file formats are basically the same but use tabs and commas,
       respectively
-
+    
     Returns
     -------
     pd.DataFrame

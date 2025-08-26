@@ -16,8 +16,6 @@ plugin = Plugin(
     description="Qiime2 Plugin for PSEA."  # TODO: get a description
 )
 
-# TODO: This currently takes a buncha random tsv files not artifacts
-# TODO: Need to create a pairs_file for my test epitope data
 
 # register make_psea_table function
 plugin.pipelines.register_function(
@@ -31,6 +29,7 @@ plugin.pipelines.register_function(
         "species_taxa_file": Str,
         "species_color_file": Str,
         "threshold": Float,
+        "mapped_epitope_file": Str,
         "p_val_thresh": Float,
         "nes_thresh": Float,
         "min_size": Int,
@@ -46,7 +45,9 @@ plugin.pipelines.register_function(
         "max_workers": Int,
         "summary_tables_dir": Str,
         "vis_outputs_dir": Str,
-        "seed": Int
+        "seed": Int,
+        "enriched_subtypes_dir": Str,
+        "include_negative_enrichment": Bool
     },
     parameter_descriptions={
         "scores_file": "Name of Z score matrix file.",
@@ -62,9 +63,12 @@ plugin.pipelines.register_function(
             " name and HEX color code for that species to appear on the output charts.",
         "threshold": "Minimum Z score a peptide must maintain to be"
             " considered in Gene Set Enrichment Analysis.",
+        "mapped_epitope_file": "Path to tsv file mapping EpitopeIDs to"
+            " CodeNames and SpeciesSubtypes that epitope is associated with.",
         "p_val_thresh": "Specifies the value adjusted p-values must meet to be"
             " considered for highlighting in volcano and scatter plots.",
-        "nes_thresh": "Specifies the value ",
+        "nes_thresh": "Specifies the value of normalized enrichment score"
+            " needed to be considered enriched.",
         "min_size": "Minimum allowed number of peptides from peptide set also"
             " the data set.",
         "max_size": "Maximum allowed number of peptides from peptide set also"
@@ -87,7 +91,11 @@ plugin.pipelines.register_function(
         "summary_tables_dir": "Directory to save antibody event summary tables.",
         "vis_outputs_dir": "Directory to save visualizations (not as a qiime2 artifact)."
             " They will not be output here if this option is not provided.",
-        "seed": "Seed for permutation. Seed used to generate a random number for phenotype and gene_set permutations when running GSEA."
+        "seed": "Seed for permutation. Seed used to generate a random number for phenotype and gene_set permutations when running GSEA.",
+        "enriched_subtypes_dir": "Directory to save enriched subtype tables.",
+        "include_negative_enrichment": "Whether to include negative enrichment"
+            " scores with absolute value > nes_threshold in enriched subtype"
+            " tables"
     },
     outputs=[("scatter_plot", Visualization), ("volcano_plot", Visualization), ("ae_plots", Visualization)],
     output_descriptions={
