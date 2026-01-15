@@ -21,6 +21,10 @@ from q2_PSEA.actions.r_functions import INTERNAL
 pandas2ri.activate()
 
 
+# TODO: Clean up this pipeline so it doesn't create files through side effects
+# consolidate to proper
+
+
 def make_psea_table(
         ctx,
         scores_file,
@@ -55,6 +59,7 @@ def make_psea_table(
     zscatter = ctx.get_action("ps-plot", "zscatter")
     aeplots = ctx.get_action("ps-plot", "aeplots")
 
+    # TODO: Do this through QIIME 2
     assert spline_type in splines.SPLINE_TYPES, \
         f"'{spline_type}' is not a valid spline method!"
     assert not os.path.exists(table_dir), \
@@ -74,6 +79,7 @@ def make_psea_table(
             f"'{vis_outputs_dir}' already exists! Please move or remove this directory."
         os.mkdir(vis_outputs_dir)
 
+    # TODO: Stop doing this. Make these real outputs
     os.mkdir(table_dir)
     os.mkdir(summary_tables_dir)
     os.mkdir(enriched_subtypes_dir)
