@@ -59,24 +59,19 @@ def make_psea_table(
     zscatter = ctx.get_action("ps-plot", "zscatter")
     aeplots = ctx.get_action("ps-plot", "aeplots")
 
-    assert not os.path.exists(table_dir), \
-        f"'{table_dir}' already exists! Please move or remove this directory."
-    assert not os.path.exists(summary_tables_dir), \
-        f"'{summary_tables_dir}' already exists! Please move or remove this directory."
-    assert not os.path.exists(enriched_subtypes_dir), \
-        f"'{enriched_subtypes_dir}' already exists! Please move or remove this directory."
     if iterative_analysis:
         assert ".gmt" in peptide_sets_file.lower(), \
             "You are running iterative analysis without a GMT peptide sets file."
     if max_workers != None:
         assert max_workers <= multiprocessing.cpu_count(), \
             f"Max workers excedes {multiprocessing.cpu_count()}, the number of CPUs on your machine."
+
+    # TODO: Stop doing this. Make these real outputs
     if vis_outputs_dir != None:
         assert not os.path.exists(vis_outputs_dir), \
             f"'{vis_outputs_dir}' already exists! Please move or remove this directory."
         os.mkdir(vis_outputs_dir)
 
-    # TODO: Stop doing this. Make these real outputs
     os.mkdir(table_dir)
     os.mkdir(summary_tables_dir)
     os.mkdir(enriched_subtypes_dir)
@@ -162,6 +157,7 @@ def make_psea_table(
             if not species_taxa_file:
                 taxa_access = "ID"
 
+            # TODO: Maybe we parsl this
             with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
                 pair_futures = [executor.submit(create_fgsea_table_for_pair,
                                 pair,
@@ -334,6 +330,27 @@ def make_psea_table(
     print(f"\nFinished in {round(end_time-start_time, 2)} seconds")
 
     return scatter_plot, volcano_plot, ae_plot
+
+
+# Run PSEA and get the significant species based on p.adjust < .05 or some specified threshold
+# Look at core_enrichment column of that output for / separated peptide values for all output tables which are per sample
+def filter_psea_outputs(in_dir: str, out_path: str, threshold: float=.05):
+    filtered_df = pd.DataFrame()
+    for fp in os.listdir(in_dir):
+        fp = os.path.join(in_dir, fp)
+        df = pd.read_csv(fp, sep='\t')
+        df = df.loc[(df['p.adjust'] < threshold)]
+        filtered_df = pd.concat([filtered_df, df])
+
+    filtered_df.set_index('ID', inplace=True)
+    filtered_df.to_csv(out_path, sep='\t')
+
+    global_enriched = []
+    for row in filtered_df['core_enrichment']:
+        enriched = row.split('/')
+        global_enriched.extend(enriched)
+
+    global_enriched = set(global_enriched)
 
 
 def create_fgsea_table_for_pair(
