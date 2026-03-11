@@ -1,7 +1,16 @@
 #! /usr/bin/env python
 from q2_types.feature_data import FeatureData
+from q2_types.feature_table import FeatureTable
 from q2_pepsirf.format_types import PSEAScores
+from q2_pepsirf.types import Zscore
 
+from q2_PSEA.formats import (
+    PairsTSVFormat,
+    PeptideSetsFormat,
+    SpeciesTaxaTSVFormat,
+    SpeciesColorsTSVFormat,
+)
+from q2_PSEA.types import Pairs, PeptideSets, SpeciesTaxa, SpeciesColors
 
 import q2_PSEA
 
@@ -18,53 +27,50 @@ plugin = Plugin(
     description="Qiime2 Plugin for PSEA."  # TODO: get a description
 )
 
+plugin.register_semantic_types(Pairs, PeptideSets, SpeciesTaxa, SpeciesColors)
+plugin.register_formats(
+    PairsTSVFormat,
+    PeptideSetsFormat,
+    SpeciesTaxaTSVFormat,
+    SpeciesColorsTSVFormat,
+)
+plugin.register_semantic_type_to_format(Pairs, PairsTSVFormat)
+plugin.register_semantic_type_to_format(PeptideSets, PeptideSetsFormat)
+plugin.register_semantic_type_to_format(SpeciesTaxa, SpeciesTaxaTSVFormat)
+plugin.register_semantic_type_to_format(SpeciesColors, SpeciesColorsTSVFormat)
+
 
 # register make_psea_table function
 plugin.pipelines.register_function(
     function=make_psea_table,
-    inputs={},
+    inputs={
+        "scores": FeatureTable[Zscore],
+        "pairs": Pairs,
+        "peptide_sets": PeptideSets,
+    },
     parameters={
-        "scores_file": Str,
-        "pairs_file": Str,
-        "peptide_sets_file": Str,
-        "species_taxa_file": Str,
-        "species_color_file": Str,
         "threshold": Float,
-        "epitope_file": Str,
+        "epitope": Str,
         "collapse": Str % Choices(['Bacterial', 'Viral', 'Both']),
         "p_val_thresh": Float,
         "nes_thresh": Float,
+        "species_taxa": Str,
+        "species_colors": Str,
         "min_size": Int,
         "max_size": Int,
         "permutation_num": Int,
         "spline_type": Str % Choices(q2_PSEA.actions.splines.SPLINE_TYPES),
         "degree": Int,
         "dof": Int,
-        "table_dir": Str,
         "iterative_analysis": Bool,
         "iter_tables_dir": Str,
         "max_workers": Int,
-        "summary_tables_dir": Str,
-        "vis_outputs_dir": Str,
         "seed": Int
     },
     parameter_descriptions={
-        "scores_file": "Name of Z score matrix file. Will be collapsed to"
-            " epitope level if epitope is passed.",
-        "pairs_file": "Name of tab-delimited file containing pairs of"
-            " sample names.",
-        "peptide_sets_file": "Name of GMT file containing information about"
-            " species and the peptides which are linked to them. Please refer"
-            " to 'input.gmt' in the 'examples' directory for an example of GMT"
-            " format. Will be collapsed to epitope level if epitope is"
-            " passed.",
-        "species_taxa_file": "Name of tab-delimited file containing species"
-            " name and taxanomy ID associations.",
-        "species_color_file": "Name of tab-delimited file containing species"
-            " name and HEX color code for that species to appear on the output charts.",
         "threshold": "Minimum Z score a peptide must maintain to be"
             " considered in Gene Set Enrichment Analysis.",
-        "epitope_file": "File containing information relating peptides to"
+        "epitope": "File containing information relating peptides to"
             " epitopes and species/subtype. If this argument is passed in the"
             " peptide level residuals will be calculated then collapsed to"
             " epitope level prior to further analysis.",
@@ -73,6 +79,8 @@ plugin.pipelines.register_function(
         "p_val_thresh": "Specifies the value adjusted p-values must meet to be"
             " considered for highlighting in volcano and scatter plots.",
         "nes_thresh": "Specifies the value ",
+        "species_taxa": "Tab-delimited file containing species name and taxonomy ID associations.",
+        "species_colors": "Tab-delimited file containing species name and HEX color code for charts.",
         "min_size": "Minimum allowed number of peptides from peptide set also"
             " the data set.",
         "max_size": "Maximum allowed number of peptides from peptide set also"
@@ -84,17 +92,13 @@ plugin.pipelines.register_function(
             " the moment, this will only affect the `cubic` spline approach.",
         "dof": "Degree of freedom to use when fitting the spline. Note: at the"
             " moment, this will only affect the `cubic` spline approach.",
-        "table_dir": "Directory where resulting PSEA tables will be stored.",
         "iterative_analysis": "Boolean value, whether or not to use iterative approach"
             " to filter cross-reactive peptides from less significant species."
-            " GMT peptide_sets_file recommended.",
+            " GMT peptide_sets recommended.",
         "iter_tables_dir": "Directory name to output iteration tables to. Only generates if name is provided.",
         "max_workers": "Maximum number of processes to run at a time. If none set,"
             " defaults to the number of processors on the machine.",
-        "summary_tables_dir": "Directory to save antibody event summary tables.",
-        "vis_outputs_dir": "Directory to save visualizations (not as a qiime2 artifact)."
-            " They will not be output here if this option is not provided.",
-        "seed": "Seed for permutation. Seed used to generate a random number for phenotype and gene_set permutations when running GSEA."
+        "seed": "Seed for permutation. Seed used to generate a random number for phenotype and gene_set permutations when running GSEA.",
     },
     outputs=[
         ("scatter_plot", Visualization), ("volcano_plot", Visualization),

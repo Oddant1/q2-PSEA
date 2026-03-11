@@ -12,7 +12,6 @@ import multiprocessing
 
 from math import log, pow
 from rpy2.robjects import pandas2ri
-from q2_pepsirf.format_types import PepsirfContingencyTSVFormat
 from q2_PSEA.actions.r_functions import INTERNAL
 
 
@@ -20,30 +19,27 @@ pandas2ri.activate()
 
 
 def make_psea_table(
-        ctx,
-        scores_file,
-        pairs_file,
-        peptide_sets_file,
-        threshold,
-        epitope_file=None,
-        collapse="Viral",
-        p_val_thresh=0.05,
-        nes_thresh=1,
-        species_taxa_file="",
-        species_color_file="",
-        min_size=15,
-        max_size=2000,
-        permutation_num=10000,  # as per original PSEA code
-        spline_type="r-smooth",
-        degree=3,
-        dof=None,
-        table_dir="./psea_table_outdir",
-        iterative_analysis=True,
-        iter_tables_dir="",
-        max_workers=None,
-        summary_tables_dir="./psea_ae_summary_tables",
-        vis_outputs_dir=None,
-        seed=149
+    ctx,
+    scores,
+    pairs,
+    peptide_sets,
+    threshold,
+    epitope="",
+    collapse="Viral",
+    p_val_thresh=0.05,
+    nes_thresh=1,
+    species_taxa="",
+    species_colors="",
+    min_size=15,
+    max_size=2000,
+    permutation_num=10000,  # as per original PSEA code
+    spline_type="r-smooth",
+    degree=3,
+    dof=None,
+    iterative_analysis=True,
+    iter_tables_dir="",
+    max_workers=None,
+    seed=149
 ):
     start_time = time.perf_counter()
 
@@ -51,12 +47,22 @@ def make_psea_table(
     zscatter = ctx.get_action("ps-plot", "zscatter")
     aeplots = ctx.get_action("ps-plot", "aeplots")
 
-    scores = pd.read_csv(scores_file, sep="\t", index_col=0)
-    zscores = ctx.make_artifact('FeatureTable[Zscore]', scores)
+    scores = scores.view(pd.DataFrame) if hasattr(scores, "view") else scores
+    zscores = ctx.make_artifact("FeatureTable[Zscore]", scores)
 
-    if epitope_file is not None:
-        epitope_df = pd.read_csv(epitope_file, sep="\t", index_col=0, low_memory=False)
-        epitope = ctx.make_artifact('FeatureData[Epitope]', epitope_df)
+    pairs_path = getattr(pairs, "path", pairs)
+    peptide_sets_path = getattr(peptide_sets, "path", peptide_sets)
+    species_taxa_path = getattr(species_taxa, "path", species_taxa) if species_taxa else ""
+    species_colors_path = getattr(species_colors, "path", species_colors) if species_colors else ""
+
+    if epitope:
+        if hasattr(epitope, "view"):
+            epitope_df = epitope.view(pd.DataFrame)
+        elif isinstance(epitope, str) and epitope:
+            epitope_df = pd.read_csv(epitope, sep="\t", index_col=0, low_memory=False)
+        else:
+            epitope_df = epitope
+        epitope = ctx.make_artifact("FeatureData[Epitope]", epitope_df)
 
         create_epitope_map = ctx.get_action("epitope", "create_epitope_map")
         mapped_epitope, = create_epitope_map(epitope, collapse)
@@ -77,31 +83,20 @@ def make_psea_table(
         epitope_zscore_df = None
         epitope_gmt_df = None
 
-    assert not os.path.exists(table_dir), \
-        f"'{table_dir}' already exists! Please move or remove this directory."
-    assert not os.path.exists(summary_tables_dir), \
-        f"'{summary_tables_dir}' already exists! Please move or remove this directory."
     if iterative_analysis:
-        assert ".gmt" in peptide_sets_file.lower(), \
+        assert ".gmt" in str(peptide_sets_path).lower(), \
             "You are running iterative analysis without a GMT peptide sets file."
     if max_workers != None:
         assert max_workers <= multiprocessing.cpu_count(), \
             f"Max workers excedes {multiprocessing.cpu_count()}, the number of CPUs on your machine."
-    if vis_outputs_dir != None:
-        assert not os.path.exists(vis_outputs_dir), \
-            f"'{vis_outputs_dir}' already exists! Please move or remove this directory."
-        os.mkdir(vis_outputs_dir)
-
-    os.mkdir(table_dir)
-    os.mkdir(summary_tables_dir)
 
     if not dof:
         dof = ro.NULL
-    if not species_taxa_file:
+    if not species_taxa_path:
         taxa_access = "ID"
 
     pairs = list()
-    with open(pairs_file, "r") as fh:
+    with open(pairs_path, "r") as fh:
         # skip header line
         fh.readline()
         for line in fh.readlines():
@@ -110,16 +105,10 @@ def make_psea_table(
             pairs.append(pair)
 
     processed_scores = process_scores(scores, pairs)
-    if epitope_file:
+    if epitope:
         mapped_processed_scores = process_scores(epitope_zscore_df, pairs)
     else:
         mapped_processed_scores = None
-
-    scores_file_split = scores_file.rsplit("/", 1)
-    if len(scores_file_split) > 1:
-        processed_scores_file = f"transformed_{scores_file_split[1]}"
-    else:
-        processed_scores_file = f"transformed_{scores_file_split[0]}"
 
     # temporary directory to hold iterative analysis tables
     with tempfile.TemporaryDirectory() as temp_peptide_sets_dir:
@@ -138,8 +127,8 @@ def make_psea_table(
                 epitope_map=mapped_epitope_df,
                 pairs=pairs,
                 processed_scores=processed_scores,
-                og_peptide_sets_file=peptide_sets_file,
-                species_taxa_file=species_taxa_file,
+                og_peptide_sets_file=peptide_sets_path,
+                species_taxa_file=species_taxa_path,
                 threshold=threshold,
                 permutation_num=permutation_num,
                 min_size=min_size,
@@ -158,9 +147,11 @@ def make_psea_table(
             )
         else:
             # each pair will have the same gmt file
-            pair_pep_sets_file_dict = dict.fromkeys(pairs, peptide_sets_file)
+            pair_pep_sets_file_dict = dict.fromkeys(pairs, peptide_sets_path)
 
-        with tempfile.TemporaryDirectory() as tempdir:
+        with tempfile.TemporaryDirectory() as tempdir, \
+             tempfile.TemporaryDirectory() as table_dir, \
+             tempfile.TemporaryDirectory() as summary_tables_dir:
             pos_nes_event_matrix = dict()
             neg_nes_event_matrix = dict()
             zero_nes_event_matrix = dict()
@@ -168,11 +159,6 @@ def make_psea_table(
             pos_nes_count_dict = dict()
             neg_nes_count_dict = dict()
             zero_nes_count_dict = dict()
-
-            if epitope_file is not None:
-                mapped_processed_scores.to_csv(processed_scores_file, sep="\t")
-            else:
-                processed_scores.to_csv(processed_scores_file, sep="\t")
 
             taxa_access = "species_name"
             pair_spline_dict = { "x": list(), "y": list(), "pair": list() }
@@ -183,7 +169,7 @@ def make_psea_table(
                                 pair,
                                 processed_scores,
                                 pair_pep_sets_file_dict[ pair ],
-                                species_taxa_file,
+                                species_taxa_path,
                                 threshold,
                                 permutation_num,
                                 min_size,
@@ -291,21 +277,20 @@ def make_psea_table(
 
             processed_scores_art = ctx.make_artifact(
                 type="FeatureTable[Zscore]",
-                view=processed_scores_file,
-                view_type=PepsirfContingencyTSVFormat
+                view=processed_scores
             )
 
             scatter_plot, = zscatter(
                 zscores=processed_scores_art,
-                pairs_file=pairs_file,
+                pairs_file=pairs_path,
                 spline_file=f"{tempdir}/spline_data.tsv",
                 p_val_access="p.adjust",
                 le_peps_access="core_enrichment",
                 taxa_access=taxa_access,
                 highlight_data=table_dir,
                 highlight_threshold=p_val_thresh,
-                colors_file=species_color_file,
-                vis_outputs_dir=vis_outputs_dir
+                colors_file=species_colors_path,
+                vis_outputs_dir=None
             )
 
             volcano_plot, = volcano(
@@ -315,9 +300,9 @@ def make_psea_table(
                 x_threshold=nes_thresh,
                 y_threshold=p_val_thresh,
                 xy_labels=["Enrichment score", "Adjusted p-values"],
-                pairs_file=pairs_file,
-                colors_file=species_color_file,
-                vis_outputs_dir=vis_outputs_dir
+                pairs_file=pairs_path,
+                colors_file=species_colors_path,
+                vis_outputs_dir=None
             )
 
             ae_plot, = aeplots(
@@ -325,8 +310,8 @@ def make_psea_table(
                 neg_nes_ae_file=os.path.join(summary_tables_dir, "Negative_NES_AE.tsv"),
                 xy_access=["Events", "Species"],
                 xy_labels=["Number of AEs in cohort", "Species"],
-                colors_file=species_color_file,
-                vis_outputs_dir=vis_outputs_dir
+                colors_file=species_colors_path,
+                vis_outputs_dir=None
             )
 
     end_time = time.perf_counter()

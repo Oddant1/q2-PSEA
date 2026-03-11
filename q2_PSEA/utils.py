@@ -1,6 +1,7 @@
 import pandas as pd
 import rpy2.robjects as ro
 import qiime2
+import os
 
 from rpy2.robjects import pandas2ri
 from rpy2.robjects.packages import importr
@@ -151,7 +152,8 @@ def remove_peptides(scores, peptide_sets) -> (pd.DataFrame, pd.DataFrame):
     if isinstance(peptide_sets, pd.DataFrame):
         format = "df"
     else:
-        format = peptide_sets.split(".")[1]
+        _, ext = os.path.splitext(str(peptide_sets))
+        format = ext.lstrip(".").lower()
     assert format in list(REMOVE_PEPTIDES_SWITCH), \
         f"'{format}' is not a supported format for the peptide sets file!"
     return REMOVE_PEPTIDES_SWITCH[format](scores, peptide_sets)
