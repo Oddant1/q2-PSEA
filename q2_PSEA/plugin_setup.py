@@ -1,33 +1,244 @@
 #! /usr/bin/env python
 
+import json
+
+import pandas as pd
 import q2_PSEA
 
-
-from q2_PSEA.actions.psea import make_psea_table
-from qiime2.plugin import (
-    Bool, Float, Int, Plugin, Str, Visualization
+from q2_PSEA.actions.psea import (
+    create_fgsea_table_for_pair,
+    make_psea_table,
+    run_iterative_peptide_analysis,
+    run_iterative_process_single_pair,
 )
+from q2_PSEA.formats import (
+    IterativePairStateDirFmt,
+    IterativePairStateFormat,
+    IterativePeptideSetsDirFmt,
+    IterativePeptideSetsFormat,
+    PSEAPairsDirFmt,
+    PSEAPairsFormat,
+    PSEATableDirFmt,
+    PSEATableFormat,
+    PeptideSetsDirFmt,
+    PeptideSetsFormat,
+    SpeciesColorsDirFmt,
+    SpeciesColorsFormat,
+    SpeciesTaxonomyDirFmt,
+    SpeciesTaxonomyFormat,
+    SplineDataDirFmt,
+    SplineDataFormat,
+)
+from q2_PSEA.types import (
+    IterativePairState,
+    IterativePeptideSets,
+    PSEAPairs,
+    PSEATable,
+    PeptideSets,
+    SpeciesColors,
+    SpeciesTaxonomy,
+    SplineData,
+)
+from q2_pepsirf.format_types import FeatureTable, Zscore
+from qiime2.plugin import Bool, Float, Int, Plugin, Str, Visualization
 
 
-# q2-PSEA plugin object
 plugin = Plugin(
-    "psea", version=q2_PSEA.__version__,
+    "psea",
+    version=q2_PSEA.__version__,
     website="https://github.com/LadnerLab/q2-PSEA.git",
-    description="Qiime2 Plugin for PSEA."  # TODO: get a description
+    description="Qiime2 Plugin for PSEA."
 )
 
 
-# register make_psea_table function
+plugin.register_semantic_types(
+    PSEAPairs,
+    PeptideSets,
+    SpeciesTaxonomy,
+    SpeciesColors,
+    PSEATable,
+    SplineData,
+    IterativePairState,
+    IterativePeptideSets,
+)
+
+plugin.register_formats(
+    PSEAPairsFormat,
+    PeptideSetsFormat,
+    SpeciesTaxonomyFormat,
+    SpeciesColorsFormat,
+    PSEATableFormat,
+    SplineDataFormat,
+    IterativePairStateFormat,
+    IterativePeptideSetsFormat,
+    PSEAPairsDirFmt,
+    PeptideSetsDirFmt,
+    SpeciesTaxonomyDirFmt,
+    SpeciesColorsDirFmt,
+    PSEATableDirFmt,
+    SplineDataDirFmt,
+    IterativePairStateDirFmt,
+    IterativePeptideSetsDirFmt,
+)
+
+plugin.register_artifact_class(PSEAPairs, PSEAPairsDirFmt)
+plugin.register_artifact_class(PeptideSets, PeptideSetsDirFmt)
+plugin.register_artifact_class(SpeciesTaxonomy, SpeciesTaxonomyDirFmt)
+plugin.register_artifact_class(SpeciesColors, SpeciesColorsDirFmt)
+plugin.register_artifact_class(PSEATable, PSEATableDirFmt)
+plugin.register_artifact_class(SplineData, SplineDataDirFmt)
+plugin.register_artifact_class(IterativePairState, IterativePairStateDirFmt)
+plugin.register_artifact_class(IterativePeptideSets, IterativePeptideSetsDirFmt)
+
+
+@plugin.register_transformer
+def _psea_table_df_to_format(data: pd.DataFrame) -> PSEATableFormat:
+    ff = PSEATableFormat()
+    data.to_csv(str(ff), sep="\t", index=False)
+    return ff
+
+
+@plugin.register_transformer
+def _psea_table_format_to_df(ff: PSEATableFormat) -> pd.DataFrame:
+    return pd.read_csv(str(ff), sep="\t")
+
+
+@plugin.register_transformer
+def _spline_data_df_to_format(data: pd.DataFrame) -> SplineDataFormat:
+    ff = SplineDataFormat()
+    data.to_csv(str(ff), sep="\t", index=False)
+    return ff
+
+
+@plugin.register_transformer
+def _spline_data_format_to_df(ff: SplineDataFormat) -> pd.DataFrame:
+    return pd.read_csv(str(ff), sep="\t")
+
+
+@plugin.register_transformer
+def _iterative_pair_state_dict_to_format(data: dict) -> IterativePairStateFormat:
+    ff = IterativePairStateFormat()
+    with ff.open() as fh:
+        json.dump(data, fh)
+    return ff
+
+
+@plugin.register_transformer
+def _iterative_pair_state_format_to_dict(ff: IterativePairStateFormat) -> dict:
+    with ff.open() as fh:
+        return json.load(fh)
+
+
+@plugin.register_transformer
+def _iterative_peptide_sets_dict_to_format(data: dict) -> IterativePeptideSetsFormat:
+    ff = IterativePeptideSetsFormat()
+    with ff.open() as fh:
+        json.dump(data, fh)
+    return ff
+
+
+@plugin.register_transformer
+def _iterative_peptide_sets_format_to_dict(ff: IterativePeptideSetsFormat) -> dict:
+    with ff.open() as fh:
+        return json.load(fh)
+
+
+plugin.methods.register_function(
+    function=create_fgsea_table_for_pair,
+    inputs={
+        "processed_scores": FeatureTable[Zscore],
+        "peptide_sets": PeptideSets,
+        "species_taxa": SpeciesTaxonomy,
+    },
+    parameters={
+        "pair_a": Str,
+        "pair_b": Str,
+        "threshold": Float,
+        "permutation_num": Int,
+        "min_size": Int,
+        "max_size": Int,
+        "spline_type": Str,
+        "degree": Int,
+        "dof": Int,
+        "seed": Int,
+    },
+    outputs=[("psea_table", PSEATable), ("spline_data", SplineData)],
+    name="Create FGSEA Table For Pair",
+    description=(
+        "Create FGSEA and spline data tables for a single sample pair."
+    ),
+)
+
+
+plugin.pipelines.register_function(
+    function=run_iterative_process_single_pair,
+    inputs={
+        "processed_scores": FeatureTable[Zscore],
+        "species_taxa": SpeciesTaxonomy,
+        "pair_state": IterativePairState,
+    },
+    parameters={
+        "pair_a": Str,
+        "pair_b": Str,
+        "threshold": Float,
+        "permutation_num": Int,
+        "min_size": Int,
+        "max_size": Int,
+        "spline_type": Str,
+        "degree": Int,
+        "dof": Int,
+        "p_val_thresh": Float,
+        "nes_thresh": Float,
+        "iter_out_dir": Str,
+        "seed": Int,
+    },
+    outputs=[("updated_pair_state", IterativePairState)],
+    name="Run Iterative Process Single Pair",
+    description=(
+        "Run one iterative filtering step for a single sample pair."
+    ),
+)
+
+
+plugin.pipelines.register_function(
+    function=run_iterative_peptide_analysis,
+    inputs={
+        "pairs": PSEAPairs,
+        "processed_scores": FeatureTable[Zscore],
+        "og_peptide_sets": PeptideSets,
+        "species_taxa": SpeciesTaxonomy,
+    },
+    parameters={
+        "threshold": Float,
+        "permutation_num": Int,
+        "min_size": Int,
+        "max_size": Int,
+        "spline_type": Str,
+        "degree": Int,
+        "dof": Int,
+        "p_val_thresh": Float,
+        "nes_thresh": Float,
+        "iter_tables_dir": Str,
+        "seed": Int,
+    },
+    outputs=[("pair_peptide_sets", IterativePeptideSets)],
+    name="Run Iterative Peptide Analysis",
+    description=(
+        "Run iterative peptide filtering across all sample pairs."
+    ),
+)
+
+
 plugin.pipelines.register_function(
     function=make_psea_table,
-    inputs={},
-    input_descriptions=None,
+    inputs={
+        "scores": FeatureTable[Zscore],
+        "pairs": PSEAPairs,
+        "peptide_sets": PeptideSets,
+        "species_taxa": SpeciesTaxonomy,
+        "species_colors": SpeciesColors,
+    },
     parameters={
-        "scores_file": Str,
-        "pairs_file": Str,
-        "peptide_sets_file": Str,
-        "species_taxa_file": Str,
-        "species_color_file": Str,
         "threshold": Float,
         "p_val_thresh": Float,
         "nes_thresh": Float,
@@ -44,65 +255,15 @@ plugin.pipelines.register_function(
         "max_workers": Int,
         "summary_tables_dir": Str,
         "vis_outputs_dir": Str,
-        "seed": Int
+        "seed": Int,
     },
-    parameter_descriptions={
-        "scores_file": "Name of Z score matrix file.",
-        "pairs_file": "Name of tab-delimited file containing pairs of"
-            " sample names.",
-        "peptide_sets_file": "Name of GMT file containing information about"
-            " species and the peptides which are linked to them. Please refer"
-            " to 'input.gmt' in the 'examples' directory for an example of GMT"
-            " format.",
-        "species_taxa_file": "Name of tab-delimited file containing species"
-            " name and taxanomy ID associations.",
-        "species_color_file": "Name of tab-delimited file containing species"
-            " name and HEX color code for that species to appear on the output charts.",
-        "threshold": "Minimum Z score a peptide must maintain to be"
-            " considered in Gene Set Enrichment Analysis.",
-        "p_val_thresh": "Specifies the value adjusted p-values must meet to be"
-            " considered for highlighting in volcano and scatter plots.",
-        "nes_thresh": "Specifies the value ",
-        "min_size": "Minimum allowed number of peptides from peptide set also"
-            " the data set.",
-        "max_size": "Maximum allowed number of peptides from peptide set also"
-            " the data set.",
-        "permutation_num": "Number of permutations. Minimal possible nominal"
-            " p-value is about 1/perm.",
-        "spline_type": "Specifies which spline operation to use.",
-        "degree": "Specifies the degree of the piecewise polynomial. Note: at"
-            " the moment, this will only affect the `cubic` spline approach.",
-        "dof": "Degree of freedom to use when fitting the spline. Note: at the"
-            " moment, this will only affect the `cubic` spline approach.",
-        "table_dir": "Directory where resulting PSEA tables will be stored.",
-        "pepsirf_binary": "Path to pepsirf binary.",
-        "iterative_analysis": "Boolean value, whether or not to use iterative approach"
-            " to filter cross-reactive peptides from less significant species."
-            " GMT peptide_sets_file recommended.",
-        "iter_tables_dir": "Directory name to output iteration tables to. Only generates if name is provided.",
-        "max_workers": "Maximum number of processes to run at a time. If none set,"
-            " defaults to the number of processors on the machine.",
-        "summary_tables_dir": "Directory to save antibody event summary tables.",
-        "vis_outputs_dir": "Directory to save visualizations (not as a qiime2 artifact)."
-            " They will not be output here if this option is not provided.",
-        "seed": "Seed for permutation. Seed used to generate a random number for phenotype and gene_set permutations when running GSEA."
-    },
-    outputs=[("scatter_plot", Visualization), ("volcano_plot", Visualization), ("ae_plots", Visualization)],
-    output_descriptions={
-        "scatter_plot": "Name of plot file visualization comparison between"
-            " two samples. This plot includes the smooth spline fit to the"
-            " given data and highlights the leading edge peptides for all"
-            " significant taxa.",
-        "volcano_plot": "Name of plot file visualization comparison between"
-            " enrichment scores (ES) and p-values.",
-        "ae_plots": "Name of plot of visualization for event summary, if created."
-    },
+    outputs=[
+        ("scatter_plot", Visualization),
+        ("volcano_plot", Visualization),
+        ("ae_plots", Visualization),
+    ],
     name="Make PSEA Table",
-    description="Qiime2 plug-in which provides a Python wrapper around R"
-        " functions to perform Peptide Set Enrichment Analysis. A Z score"
-        " scatter plot for each sample replicate pair complete with a spline"
-        " and highlighting of significant taxa. As well as a volcano plot"
-        " showing relationship between adjusted p-values and normalized"
-        " enrichment scores (NES) with highlighting of points which pass"
-        " provided thresholds."
+    description=(
+        "Python wrapper around R functions to perform PSEA and create output plots."
+    ),
 )

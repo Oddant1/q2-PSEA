@@ -120,6 +120,34 @@ REMOVE_PEPTIDES_SWITCH = {
 }
 
 
+def detect_peptide_sets_format(peptide_sets_file: str) -> str:
+    with open(peptide_sets_file, "r") as fh:
+        first_nonempty_line = None
+        for line in fh:
+            stripped = line.strip()
+            if stripped:
+                first_nonempty_line = stripped
+                break
+
+    assert first_nonempty_line, "Peptide sets file is empty!"
+
+    if "," in first_nonempty_line and "\t" not in first_nonempty_line:
+        return "csv"
+
+    if "\t" in first_nonempty_line:
+        cols = first_nonempty_line.split("\t")
+        # GMT lines are usually: term, description, peptide1, peptide2, ...
+        if len(cols) >= 3:
+            if cols[0].lower() == "term" and cols[1].lower() == "gene":
+                return "tsv"
+            return "gmt"
+        return "tsv"
+
+    raise AssertionError(
+        "Unable to detect peptide sets file format. Expected GMT, TSV, or CSV."
+    )
+
+
 def remove_peptides(scores, peptide_sets_file) -> (pd.DataFrame, pd.DataFrame):
     """Provides an interface to abstract support for TSV, CSV, and GMT file
     formats
@@ -134,7 +162,7 @@ def remove_peptides(scores, peptide_sets_file) -> (pd.DataFrame, pd.DataFrame):
     pd.DataFrame
         DataFrame from processing
     """
-    format = peptide_sets_file.split(".")[1]
+    format = detect_peptide_sets_format(peptide_sets_file)
     assert format in list(REMOVE_PEPTIDES_SWITCH), \
         f"'{format}' is not a supported format for the peptide sets file!"
     return REMOVE_PEPTIDES_SWITCH[format](scores, peptide_sets_file)
